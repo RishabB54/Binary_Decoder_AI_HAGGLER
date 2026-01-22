@@ -1,0 +1,12 @@
+{
+  "stockBySku": {
+    "KURTA_BLUE_01": 12,
+    "DUPATTA_BLUE_01": 2,
+    "DUPATTA_PINK_01": 18,
+    "SAREE_RED_01": 7,
+    "BLOUSE_RED_01": 4,
+    "SHIRT_MEN_BLACK_01": 10,
+    "JEANS_MEN_BLUE_01": 6,
+    "SHOES_MEN_BLACK_01": 1
+  }
+}

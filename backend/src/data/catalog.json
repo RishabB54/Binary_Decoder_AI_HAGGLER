@@ -1,0 +1,68 @@
+{
+  "items": [
+    {
+      "sku": "KURTA_BLUE_01",
+      "title": "Women Blue Cotton Kurta",
+      "category": "kurta",
+      "price": 999,
+      "tags": ["women", "cotton", "blue", "ethnic"],
+      "matchTags": ["blue", "ethnic"]
+    },
+    {
+      "sku": "DUPATTA_BLUE_01",
+      "title": "Blue Chiffon Dupatta",
+      "category": "dupatta",
+      "price": 399,
+      "tags": ["women", "blue", "ethnic", "chiffon"],
+      "matchTags": ["blue", "ethnic"]
+    },
+    {
+      "sku": "DUPATTA_PINK_01",
+      "title": "Pink Georgette Dupatta",
+      "category": "dupatta",
+      "price": 349,
+      "tags": ["women", "pink", "ethnic", "georgette"],
+      "matchTags": ["pink", "ethnic"]
+    },
+    {
+      "sku": "SAREE_RED_01",
+      "title": "Red Silk Saree",
+      "category": "saree",
+      "price": 1999,
+      "tags": ["women", "red", "silk", "ethnic"],
+      "matchTags": ["red", "ethnic"]
+    },
+    {
+      "sku": "BLOUSE_RED_01",
+      "title": "Red Saree Blouse Piece",
+      "category": "blouse",
+      "price": 299,
+      "tags": ["women", "red", "ethnic"],
+      "matchTags": ["red", "ethnic"]
+    },
+    {
+      "sku": "SHIRT_MEN_BLACK_01",
+      "title": "Men Black Casual Shirt",
+      "category": "shirt",
+      "price": 899,
+      "tags": ["men", "black", "casual"],
+      "matchTags": ["black", "casual"]
+    },
+    {
+      "sku": "JEANS_MEN_BLUE_01",
+      "title": "Men Blue Slim Jeans",
+      "category": "jeans",
+      "price": 1299,
+      "tags": ["men", "blue", "casual"],
+      "matchTags": ["blue", "casual"]
+    },
+    {
+      "sku": "SHOES_MEN_BLACK_01",
+      "title": "Men Black Sneakers",
+      "category": "shoes",
+      "price": 1599,
+      "tags": ["men", "black", "casual"],
+      "matchTags": ["black", "casual"]
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "users": [
+    { "userId": "u_bronze", "tier": "bronze", "supercoins": 50 },
+    { "userId": "u_silver", "tier": "silver", "supercoins": 200 },
+    { "userId": "u_gold", "tier": "gold", "supercoins": 800 }
+  ]
+}
