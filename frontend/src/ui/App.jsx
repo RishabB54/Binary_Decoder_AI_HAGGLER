@@ -32,24 +32,38 @@ export default function App() {
     setMessage("");
     setMessages((m) => [...m, { role: "user", text: userText }]);
 
-    const resp = await fetch(`${BACKEND_URL}/chat`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId, sessionId, message: userText })
-    });
+    try {
+      console.log("📤 Sending to backend:", userText);
+      
+      const resp = await fetch(`${BACKEND_URL}/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, sessionId, message: userText })
+      });
 
-    const data = await resp.json();
-    if (data.sessionId) setSessionId(data.sessionId);
-    if (typeof data.haggleScore === "number") setHaggleScore(data.haggleScore);
-    setDealDraft(data.dealDraft || null);
+      console.log("📥 Response status:", resp.status);
+      
+      const data = await resp.json();
+      console.log("📥 Response data:", data);
+      
+      if (data.sessionId) setSessionId(data.sessionId);
+      if (typeof data.haggleScore === "number") setHaggleScore(data.haggleScore);
+      setDealDraft(data.dealDraft || null);
 
-    setMessages((m) => [...m, { role: "assistant", text: data.replyText || "(no reply)" }]);
+      setMessages((m) => [...m, { role: "assistant", text: data.replyText || "(no reply)" }]);
+    } catch (error) {
+      console.error("❌ Frontend error:", error);
+      setMessages((m) => [...m, { 
+        role: "assistant", 
+        text: "Error: Could not connect to backend. Is it running on port 8080?" 
+      }]);
+    }
   }
 
   return (
     <div style={styles.page}>
       <div style={styles.header}>
-        <div style={styles.title}>BinaryDecoders: Bargain Concierge (No Video)</div>
+        <div style={styles.title}>🛍️ BinaryDecoders: AI Bargain Bot</div>
         <div style={styles.controls}>
           <label style={styles.label}>User Tier</label>
           <select value={userId} onChange={(e) => setUserId(e.target.value)} style={styles.select}>
