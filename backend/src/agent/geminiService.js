@@ -7,13 +7,23 @@
  */
 
 const GEMINI_API_URL = "http://genvoy.jarvis-prod.fkcloud.in/gemini-2.5-flash/:generateContent";
-const GEMINI_TEXT_API_KEY = process.env.GEMINI_TEXT_API_KEY || "3057dfce551f4941ae42ecb8b72f5f93";
-const GEMINI_IMAGE_API_KEY = process.env.GEMINI_IMAGE_API_KEY || "bbef49c51dad4a7e8f8b5420c30e4f6c";
 
-// Log configuration on startup
+// Load API keys from environment variables
+const GEMINI_TEXT_API_KEY = process.env.GEMINI_TEXT_API_KEY;
+const GEMINI_IMAGE_API_KEY = process.env.GEMINI_IMAGE_API_KEY;
+
+// Validate API keys on startup
+if (!GEMINI_TEXT_API_KEY) {
+  console.warn("⚠️  [Gemini] WARNING: GEMINI_TEXT_API_KEY not set in environment!");
+  console.warn("⚠️  [Gemini] Create a .env file with your API keys (see .env.example)");
+  console.warn("⚠️  [Gemini] Bot will use fallback mode (no AI responses)");
+}
+
+// Log configuration on startup (without exposing keys)
 console.log("🔧 [Gemini] Service initialized");
 console.log("🔧 [Gemini] API URL:", GEMINI_API_URL);
-console.log("🔧 [Gemini] API Key configured:", GEMINI_TEXT_API_KEY ? "✅ Yes" : "❌ No");
+console.log("🔧 [Gemini] Text API Key:", GEMINI_TEXT_API_KEY ? "✅ Configured" : "❌ Missing");
+console.log("🔧 [Gemini] Image API Key:", GEMINI_IMAGE_API_KEY ? "✅ Configured" : "⚠️  Optional");
 
 /**
  * Enhanced chat for bargaining with better context understanding
@@ -23,7 +33,12 @@ console.log("🔧 [Gemini] API Key configured:", GEMINI_TEXT_API_KEY ? "✅ Yes"
  */
 export async function chatWithGemini(userMessage, context = {}) {
   console.log("🤖 [Gemini] Calling API with message:", userMessage);
-  console.log("🔑 [Gemini] Using API Key:", GEMINI_TEXT_API_KEY.substring(0, 10) + "...");
+  
+  // Check if API key is available
+  if (!GEMINI_TEXT_API_KEY) {
+    console.log("⚠️  [Gemini] No API key available, skipping AI call");
+    return null; // Will use fallback
+  }
   
   const systemPrompt = `You are a friendly bargaining concierge for Flipkart Live in India. 
 You help customers negotiate bundle deals on ethnic wear and fashion items.
@@ -113,6 +128,12 @@ Keep responses brief and conversational (2-3 sentences max).`;
  * @returns {Promise<Object>} Extracted intent
  */
 export async function extractIntent(message) {
+  // Check if API key is available
+  if (!GEMINI_TEXT_API_KEY) {
+    console.log("⚠️  [Gemini] No API key for intent extraction, using fallback");
+    return null; // Will use mock NLU
+  }
+  
   const prompt = `Extract bargaining intent from this message. Return JSON only:
 {
   "baseQuery": "product name if mentioned, else null",
