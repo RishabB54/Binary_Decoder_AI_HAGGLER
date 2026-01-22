@@ -40,24 +40,95 @@ export async function chatWithGemini(userMessage, context = {}) {
     return null; // Will use fallback
   }
   
-  const systemPrompt = `You are a friendly bargaining concierge for Flipkart Live in India. 
-You help customers negotiate bundle deals on ethnic wear and fashion items.
-Be conversational, persuasive, and culturally aware of Indian shopping preferences.
+  // Calculate real constraints based on policy.js
+  const tier = context.userTier || "bronze";
+  const tierCap = tier === "gold" ? 12 : tier === "silver" ? 8 : 5;
+  const bundleBonus = (context.bundleCount || 0) >= 2 ? 2 : 0;
+  const maxDiscountPct = tierCap + bundleBonus;
+  const currentDiscountPct = context.discountPercent || 0;
+  const isAccepted = context.accepted !== false; // true if null or true
+  
+  // Calculate max discount
+  const maxDiscountRs = Math.floor((context.originalTotal || 0) * maxDiscountPct / 100);
+  
+  // Build cart summary for context
+  const cartSummary = context.cartItems && context.cartItems.length > 0
+    ? context.cartItems.map(item => `${item.name} × ${item.quantity} (₹${item.subtotal})`).join(", ")
+    : "empty";
+  
+  const quantityChange = context.currentQuantity && context.previousQuantity && context.currentQuantity !== context.previousQuantity
+    ? `Quantity changed: ${context.previousQuantity} → ${context.currentQuantity}`
+    : "";
 
-Current Context:
-- User tier: ${context.userTier || "bronze"}
-- Selected product: ${context.selectedProduct || "none"}
-- Bundle items: ${context.bundleCount || 0}
-- Current discount: ₹${context.currentDiscount || 0}
+  // Handle product not found scenario
+  const isProductNotFound = context.requestedProduct && context.requestedProduct !== "unknown" && !context.selectedProduct;
+  
+  // Pass FULL context - let Gemini be smart!
+  let systemPrompt;
+  
+  if (isProductNotFound) {
+    // Product not found - let AI suggest alternatives intelligently
+    systemPrompt = `You're a Flipkart Live bargaining agent. User asked for "${context.requestedProduct}" which we don't have.
 
-Guidelines:
-- Always mention prices in rupees (₹)
-- Suggest bundle deals to increase discounts
-- Explain loyalty benefits
-- Be friendly but firm on pricing limits
-- Acknowledge when deals are good
+AVAILABLE PRODUCTS:
+${context.availableProducts || "kurta, saree, shirt, jeans, shoes, dupatta, blouse"}
 
-Keep responses brief and conversational (2-3 sentences max).`;
+YOUR JOB:
+- Be helpful and friendly
+- Suggest similar/alternative products intelligently
+- Examples:
+  * "pants" → "I don't have pants, but I have jeans! Try 'show jeans'"
+  * "trousers" → "We have jeans instead! Say 'show jeans'"
+  * "dress" → "We have sarees and kurtas! Try 'show saree' or 'show kurta'"
+- Make it natural and helpful
+- 2-3 sentences, friendly tone
+
+User asked: "${userMessage}"
+
+Respond helpfully:`;
+  } else {
+    // Normal conversation flow
+    systemPrompt = `You're a Flipkart Live bargaining agent in India. Understand context and respond intelligently.
+
+CURRENT CART:
+${cartSummary}
+Total: ₹${context.originalTotal || 0}
+Discount: ₹${context.currentDiscount || 0} (${currentDiscountPct}%)
+Final: ₹${context.finalPrice || 0}
+${quantityChange ? `\n${quantityChange}` : ''}
+
+USER PROFILE:
+- Tier: ${tier.toUpperCase()} (${tierCap}% base discount)
+- Bundle bonus: ${bundleBonus > 0 ? `+${bundleBonus}% active (2+ items)` : `+2% if 2+ items`}
+- Maximum discount: ${maxDiscountPct}% = ₹${maxDiscountRs}
+- Offer status: ${isAccepted ? "✅ ACCEPTED" : "❌ REJECTED"}
+${context.reason ? `- Note: ${context.reason}` : ''}
+${context.aiBundle ? `- AI Bundle: ${context.aiBundle} - ${context.bundleReason}` : ''}
+
+UNDERSTAND NATURALLY:
+- "show me kurta" → Product browsing, show product
+- "i will take 4 of those" → Quantity update! Acknowledge 4 items now in cart
+- "add matching dupatta" → Bundle request, suggest matching
+- "give me 250 off" → Discount negotiation, check if within ₹${maxDiscountRs} limit
+- "take 3" / "3 of those" → Quantity update to 3
+
+RESPOND SMARTLY:
+- If quantity changed, acknowledge it: "Perfect! You now have ${context.currentQuantity || 1} × ${context.selectedProduct || 'items'} in your cart!"
+- If discount requested, negotiate within limits (max ₹${maxDiscountRs})
+- If bundle requested, suggest matching items
+- If offer rejected, explain limits and suggest alternatives (add items, upgrade tier)
+- If offer accepted, be enthusiastic about savings
+- Always complete your sentences fully - never cut off mid-thought!
+
+CONSTRAINTS:
+- NEVER offer discount > ₹${maxDiscountRs} (${maxDiscountPct}%)
+- Be friendly, persuasive, culturally aware (Indian shopping)
+- 2-3 sentences, natural and conversational
+
+User: "${userMessage}"
+
+Respond naturally:`;
+  }
 
   try {
     const response = await fetch(GEMINI_API_URL, {
@@ -78,8 +149,8 @@ Keep responses brief and conversational (2-3 sentences max).`;
           }
         ],
         generationConfig: {
-          maxOutputTokens: 200,
-          temperature: 0.7,
+          maxOutputTokens: 300,
+          temperature: 0.8,
           topP: 0.8,
           topK: 40
         },
@@ -134,18 +205,35 @@ export async function extractIntent(message) {
     return null; // Will use mock NLU
   }
   
-  const prompt = `Extract bargaining intent from this message. Return JSON only:
-{
-  "baseQuery": "product name if mentioned, else null",
-  "wantMatch": true/false (if asking for matching/bundle item),
-  "requestedDiscountAmount": number or null (if asking for specific discount in rupees),
-  "requestedDiscountPercent": number or null (if asking for percentage discount),
-  "sentiment": "eager/casual/frustrated"
-}
+  const prompt = `Extract user intent from message. Understand context naturally.
 
-User message: "${message}"
+EXAMPLES:
+{"baseQuery": "kurta", "quantity": 1, "wantMatch": false, "requestedDiscountAmount": null}
+{"baseQuery": "jeans", "quantity": 1, "wantMatch": false, "requestedDiscountAmount": null}  // "pants" → "jeans"
+{"baseQuery": "kurta", "quantity": 2, "wantMatch": false, "requestedDiscountAmount": null}
+{"baseQuery": null, "quantity": 4, "wantMatch": false, "requestedDiscountAmount": null}  // "i will take 4 of those"
+{"baseQuery": null, "quantity": 1, "wantMatch": true, "requestedDiscountAmount": null}  // "add matching dupatta"
+{"baseQuery": null, "quantity": 1, "wantMatch": false, "requestedDiscountAmount": 250}  // "give me 250 off"
 
-JSON:`;
+UNDERSTAND NATURALLY:
+- "4 of those" / "take 4" / "i want 4" → quantity: 4, baseQuery: null (use previous product)
+- "show kurta" → baseQuery: "kurta", quantity: 1
+- "i want pants" → baseQuery: "jeans" (pants = jeans)
+- "add matching dupatta" → wantMatch: true
+- "give me 250 off" → requestedDiscountAmount: 250
+
+PRODUCT SYNONYMS:
+- pants/trousers → jeans
+- churidar/salwar → kurta
+- dress/gown → saree
+- footwear/sneakers → shoes
+- top/tshirt → shirt
+
+AVAILABLE PRODUCTS: kurta, saree, shirt, jeans, shoes, dupatta, blouse
+
+User: "${message}"
+
+Return JSON only:`;
 
   try {
     const response = await fetch(GEMINI_API_URL, {
@@ -197,12 +285,15 @@ JSON:`;
 
     const jsonMatch = textContent.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
-      return JSON.parse(jsonMatch[0]);
+      const parsed = JSON.parse(jsonMatch[0]);
+      console.log(`✅ [Gemini] AI extracted intent: ${JSON.stringify(parsed)}`);
+      return parsed;
     }
 
+    console.log("⚠️  [Gemini] No valid JSON in response, will use fallback");
     return null; // Will fallback to mock NLU
   } catch (error) {
-    console.error("Intent extraction failed:", error);
+    console.error("❌ [Gemini] Intent extraction failed:", error.message);
     return null; // Fallback to mock NLU
   }
 }

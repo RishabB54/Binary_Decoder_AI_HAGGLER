@@ -7,6 +7,7 @@ import cors from "cors";
 import { catalogRouter } from "./routes/catalog.js";
 import { chatRouter } from "./routes/chat.js";
 import { dealRouter } from "./routes/deal.js";
+import sessionRouter from "./routes/session.js";
 
 const app = express();
 app.use(cors());
@@ -19,6 +20,7 @@ app.get("/health", (req, res) => {
 app.use("/catalog", catalogRouter);
 app.use("/chat", chatRouter);
 app.use("/deal", dealRouter);
+app.use("/session", sessionRouter);
 
 const port = Number(process.env.PORT || 8080);
 app.listen(port, () => {
