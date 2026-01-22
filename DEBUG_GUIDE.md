@@ -223,9 +223,9 @@ After I added logging, the backend **automatically restarted**. Now:
 ## 🔑 API Key Verification
 
 Your keys are configured:
-- **Text Key:** `3057dfce551f4941ae42ecb8b72f5f93`
-- **Image Key:** `bbef49c51dad4a7e8f8b5420c30e4f6c`
-- **Endpoint:** `http://genvoy.jarvis-prod.fkcloud.in/gemini-2.5-flash/:generateContent`
+- **Text Key:** 
+- **Image Key:** 
+- **Endpoint:** 
 
 You should see in backend logs:
 ```
