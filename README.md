@@ -15,7 +15,6 @@ cd backend
 npm install
 
 # Create .env file with API keys (or use hardcoded keys in code)
-# echo "GEMINI_TEXT_API_KEY=3057dfce551f4941ae42ecb8b72f5f93" > .env
 
 # Keys are already in code, just run:
 npm run dev
