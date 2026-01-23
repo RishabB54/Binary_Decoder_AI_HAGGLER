@@ -24,7 +24,8 @@ export function getOrCreateSession(sessionId) {
     },
     activeDeals: new Map(), // dealId -> deal object
     purchaseHistory: [], // Accepted deals
-    dealDrafts: [] // Legacy support
+    dealDrafts: [], // Legacy support
+    chatHistory: [] // Conversation history: [{role: "user"/"assistant", content: "...", timestamp: ...}]
   };
 
   sessions.set(sid, session);

@@ -27,7 +27,7 @@
 
 import { loadInventory } from "../store/inventoryStore.js";
 
-export function computeOffer({ user, items, userAskedDiscount, attempt }) {
+export function computeOffer({ user, items, userAskedDiscount, attempt, previousDiscount = 0 }) {
   const originalTotal = items.reduce((s, p) => s + p.price, 0);
 
   // TIER CAP: Base discount based on loyalty tier
@@ -51,14 +51,72 @@ export function computeOffer({ user, items, userAskedDiscount, attempt }) {
   // USER'S REQUEST
   const asked = typeof userAskedDiscount === "number" ? userAskedDiscount : null;
 
-  // ATTEMPT PENALTY: Reduce discount for excessive haggling
-  // Each attempt reduces max by 0.5%, up to 2% total
-  const attemptPenalty = Math.min(0.02, (attempt || 0) * 0.005);
+  // DYNAMIC HAGGLING STRATEGY: Random starting discount, increase based on negotiation
+  let baseDiscount;
+  
+  if (attempt === 0 || previousDiscount === 0) {
+    // First attempt: Random starting discount (20-40% of max)
+    // This makes each negotiation unique and realistic
+    const randomMultiplier = 0.2 + (Math.random() * 0.2); // 0.2 to 0.4 (20-40%)
+    baseDiscount = Math.floor(maxDiscount * randomMultiplier);
+    // Ensure minimum discount of at least ₹10 if max is high enough
+    if (maxDiscount >= 50 && baseDiscount < 10) {
+      baseDiscount = 10;
+    }
+  } else {
+    // Subsequent attempts: Increase based on negotiation
+    const remainingDiscount = maxDiscount - previousDiscount;
+    
+    if (asked !== null && asked > previousDiscount && asked <= maxDiscount) {
+      // User asked for specific amount - negotiate towards it
+      // Increase by 40-70% of the gap (be generous but not too much)
+      const gap = asked - previousDiscount;
+      const increasePercent = 0.4 + (Math.random() * 0.3); // 40-70% of gap
+      const increaseAmount = Math.floor(gap * increasePercent);
+      baseDiscount = Math.min(previousDiscount + increaseAmount, asked);
+    } else if (asked !== null && asked > maxDiscount) {
+      // User asked for more than max - move towards max
+      const gap = maxDiscount - previousDiscount;
+      const increasePercent = 0.3 + (Math.random() * 0.3); // 30-60% of remaining gap
+      const increaseAmount = Math.floor(gap * increasePercent);
+      baseDiscount = Math.min(previousDiscount + increaseAmount, maxDiscount);
+    } else {
+      // No specific request or user asked for less - increase gradually
+      // Increase by 20-35% of remaining discount space
+      const increaseMultiplier = 0.2 + (Math.random() * 0.15); // 0.2 to 0.35
+      const increaseAmount = Math.floor(remainingDiscount * increaseMultiplier);
+      baseDiscount = Math.min(previousDiscount + increaseAmount, maxDiscount);
+    }
+  }
+  
+  // ATTEMPT PENALTY: Only apply if user keeps asking after max (rare case)
+  const attemptPenalty = attempt > 3 ? Math.min(0.02, (attempt - 3) * 0.005) : 0;
   const penalizedMaxDiscount = Math.max(0, Math.floor(maxDiscount * (1 - attemptPenalty)));
 
-  // FINAL DISCOUNT: Either what they asked (if reasonable) or our max
-  // No hard cap - discount scales with cart value
-  const discountTotal = asked === null ? penalizedMaxDiscount : Math.min(asked, penalizedMaxDiscount);
+  // FINAL DISCOUNT: 
+  // - If user asked for specific amount: Negotiate towards it (up to penalized max)
+  // - If no specific request: Use dynamic base discount
+  let discountTotal;
+  if (asked !== null) {
+    // User asked for specific amount
+    if (asked <= baseDiscount) {
+      // User asked for less than our current offer - give what they asked
+      discountTotal = asked;
+    } else if (asked <= penalizedMaxDiscount) {
+      // User asked for more - negotiate: give between current offer and their request
+      // Be generous: give 70-90% of the gap (reward good negotiation)
+      const gap = asked - baseDiscount;
+      const negotiationPercent = 0.7 + (Math.random() * 0.2); // 70-90% of gap
+      const negotiationAmount = Math.floor(gap * negotiationPercent);
+      discountTotal = Math.min(baseDiscount + negotiationAmount, asked);
+    } else {
+      // User asked for more than max - give max
+      discountTotal = penalizedMaxDiscount;
+    }
+  } else {
+    // No specific request - use dynamic base discount
+    discountTotal = baseDiscount;
+  }
   const finalTotal = Math.max(0, originalTotal - discountTotal);
 
   // ACCEPTED: Did we give them what they asked for?

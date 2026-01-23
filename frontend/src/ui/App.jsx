@@ -2,6 +2,7 @@ import React, { useMemo, useState, useEffect } from "react";
 import { HaggleMeter } from "./HaggleMeter.jsx";
 import { DealCard } from "./DealCard.jsx";
 import { DealsPanel } from "./DealsPanel.jsx";
+import { ImageUpload } from "./ImageUpload.jsx";
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8080";
 
@@ -152,6 +153,21 @@ export default function App() {
                   <div style={styles.bubbleText}>{m.text}</div>
                 </div>
               ))}
+            </div>
+            <div style={{ marginBottom: 12 }}>
+              <ImageUpload 
+                onSearchComplete={(items) => {
+                  if (items && items.length > 0) {
+                    // Add message showing search results
+                    setMessages((m) => [...m, {
+                      role: "assistant",
+                      text: `🎨 Found ${items.length} similar products from your image!\n\n${items.slice(0, 3).map((item, idx) => 
+                        `${idx + 1}. ${item.title} - ₹${item.price}`
+                      ).join('\n')}\n\nSay "show me [product name]" to see details and start bargaining!`
+                    }]);
+                  }
+                }}
+              />
             </div>
             <div style={styles.inputRow}>
               <input

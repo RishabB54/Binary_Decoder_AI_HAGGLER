@@ -41,6 +41,9 @@ export async function bargainAgent({ userId, sessionId, message }) {
     if (!intent.quantity) {
       quantity = 1;
     }
+    // Reset discount tracking for new product
+    session.context.lastDiscount = 0;
+    session.context.attempt = 0;
   } else if (intent.quantity && intent.quantity > 1 && selectedBase) {
     // Quantity update for existing product (e.g., "i will take 4 of those")
     quantity = intent.quantity;
@@ -73,9 +76,12 @@ export async function bargainAgent({ userId, sessionId, message }) {
       availableProducts: availableProducts
     };
     
+    // Get chat history
+    const chatHistory = session.chatHistory || [];
+    
     let replyText;
     try {
-      const aiReply = await chatWithGemini(message, geminiContext);
+      const aiReply = await chatWithGemini(message, geminiContext, chatHistory);
       if (aiReply) {
         replyText = aiReply;
       } else {
@@ -83,6 +89,16 @@ export async function bargainAgent({ userId, sessionId, message }) {
       }
     } catch (error) {
       replyText = `I don't have "${intent.baseQuery}" right now. Available: ${availableProducts}. Try "show jeans" or "show kurta"!`;
+    }
+    
+    // Save to chat history
+    if (!session.chatHistory) session.chatHistory = [];
+    session.chatHistory.push(
+      { role: "user", content: message, timestamp: Date.now() },
+      { role: "assistant", content: replyText, timestamp: Date.now() }
+    );
+    if (session.chatHistory.length > 20) {
+      session.chatHistory = session.chatHistory.slice(-20);
     }
     
     return {
@@ -95,10 +111,21 @@ export async function bargainAgent({ userId, sessionId, message }) {
 
   // If discount request but no product, ask for product first
   if (!selectedBase && isDiscountOnlyRequest) {
+    const replyText = "First, tell me what you'd like to buy (example: 'show kurta'), then we can negotiate the price!";
+    
+    // Save to chat history
+    if (!session.chatHistory) session.chatHistory = [];
+    session.chatHistory.push(
+      { role: "user", content: message, timestamp: Date.now() },
+      { role: "assistant", content: replyText, timestamp: Date.now() }
+    );
+    if (session.chatHistory.length > 20) {
+      session.chatHistory = session.chatHistory.slice(-20);
+    }
+
     return {
       sessionId: session.sessionId,
-      replyText:
-        "First, tell me what you'd like to buy (example: 'show kurta'), then we can negotiate the price!",
+      replyText,
       haggleScore: 0.1,
       dealDraft: null
     };
@@ -159,14 +186,35 @@ export async function bargainAgent({ userId, sessionId, message }) {
     }
   }
 
+  // Smart attempt tracking: Only penalize if user keeps asking for same/less discount
+  // If they ask for MORE discount, don't penalize - they're negotiating upward!
+  const lastDiscount = session.context.lastDiscount || 0;
+  const requestedDiscount = intent.requestedDiscountAmount;
+  
+  // If user asks for MORE discount than we gave before, reset attempt penalty
+  // This encourages negotiation rather than penalizing it
+  const isNegotiatingUp = requestedDiscount !== null && requestedDiscount > lastDiscount;
+  const attemptToUse = isNegotiatingUp ? 0 : (session.context.attempt || 0);
+  
   const offer = computeOffer({
     user,
     items: expandedItems,
     userAskedDiscount: intent.requestedDiscountAmount,
-    attempt: session.context.attempt || 0
+    attempt: attemptToUse,
+    previousDiscount: session.context.lastDiscount || 0
   });
 
-  session.context.attempt = (session.context.attempt || 0) + 1;
+  // Increment attempt only if user is NOT negotiating upward
+  // This prevents penalty when user asks for more discount
+  if (!isNegotiatingUp && intent.requestedDiscountAmount !== null) {
+    session.context.attempt = (session.context.attempt || 0) + 1;
+  } else if (isNegotiatingUp) {
+    // Reset attempt when negotiating upward - fresh start!
+    session.context.attempt = 0;
+  }
+  
+  // Save current discount for next comparison
+  session.context.lastDiscount = offer.discountTotal;
 
   const dealId = randomUUID();
   const dealDraft = {
@@ -188,6 +236,28 @@ export async function bargainAgent({ userId, sessionId, message }) {
 
   saveDealDraft(session.sessionId, dealDraft);
 
+  // Get previous deals for context
+  const previousDeals = Array.from(session.activeDeals.values())
+    .filter(d => d.dealId !== dealId) // Exclude current deal
+    .slice(-5); // Last 5 deals
+  
+  // Get purchase history
+  const purchaseHistory = session.purchaseHistory.slice(-5);
+  
+  // Get chat history
+  const chatHistory = session.chatHistory || [];
+
+  // Build product details for explaining specialty
+  const productDetails = bundleItems.map(item => ({
+    name: item.product.title,
+    brand: item.product.brand || "Premium Brand",
+    category: item.product.category,
+    price: item.product.price,
+    description: item.product.description || `${item.product.title} - High quality ${item.product.category}`,
+    tags: item.product.tags || [],
+    quantity: item.quantity
+  }));
+
   // Pass FULL context to Gemini - let it be smart!
   const geminiContext = {
     userTier: user.tier,
@@ -199,6 +269,7 @@ export async function bargainAgent({ userId, sessionId, message }) {
       price: item.product.price,
       subtotal: item.product.price * item.quantity
     })),
+    productDetails: productDetails, // Full product info for explaining specialty
     originalTotal: offer.originalTotal,
     currentDiscount: offer.discountTotal,
     finalPrice: offer.finalTotal,
@@ -209,12 +280,13 @@ export async function bargainAgent({ userId, sessionId, message }) {
     aiBundle: aiSuggestion ? aiSuggestion.name : null,
     bundleReason: aiSuggestion ? aiSuggestion.reason : null,
     previousQuantity: session.context.quantity || 1,
-    currentQuantity: quantity
+    currentQuantity: quantity,
+    previousDeals: [...previousDeals, ...purchaseHistory] // Include both active and accepted deals
   };
 
   let replyText;
   try {
-    const geminiReply = await chatWithGemini(message, geminiContext);
+    const geminiReply = await chatWithGemini(message, geminiContext, chatHistory);
     if (geminiReply) {
       // Enhance Gemini response with deal details
       replyText = buildEnhancedReply({ 
@@ -240,6 +312,20 @@ export async function bargainAgent({ userId, sessionId, message }) {
       offer, 
       aiSuggestion 
     });
+  }
+
+  // Save to chat history
+  if (!session.chatHistory) {
+    session.chatHistory = [];
+  }
+  session.chatHistory.push(
+    { role: "user", content: message, timestamp: Date.now() },
+    { role: "assistant", content: replyText, timestamp: Date.now() }
+  );
+  
+  // Keep only last 20 messages (10 exchanges)
+  if (session.chatHistory.length > 20) {
+    session.chatHistory = session.chatHistory.slice(-20);
   }
 
   return {

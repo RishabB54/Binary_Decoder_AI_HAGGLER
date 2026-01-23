@@ -29,9 +29,10 @@ console.log("🔧 [Gemini] Image API Key:", GEMINI_IMAGE_API_KEY ? "✅ Configur
  * Enhanced chat for bargaining with better context understanding
  * @param {string} userMessage - User's message
  * @param {Object} context - Current shopping context
+ * @param {Array} chatHistory - Previous conversation messages [{role: "user"/"assistant", content: "..."}]
  * @returns {Promise<string>} AI response
  */
-export async function chatWithGemini(userMessage, context = {}) {
+export async function chatWithGemini(userMessage, context = {}, chatHistory = []) {
   console.log("🤖 [Gemini] Calling API with message:", userMessage);
   
   // Check if API key is available
@@ -87,50 +88,134 @@ User asked: "${userMessage}"
 
 Respond helpfully:`;
   } else {
-    // Normal conversation flow
-    systemPrompt = `You're a Flipkart Live bargaining agent in India. Understand context and respond intelligently.
+    // Build previous deals summary
+    const previousDeals = context.previousDeals || [];
+    const previousDealsText = previousDeals.length > 0
+      ? `\nPREVIOUS DEALS IN THIS SESSION:\n${previousDeals.map((deal, idx) => 
+          `${idx + 1}. ${deal.items?.map(i => i.title).join(", ") || "Items"} - ₹${deal.finalTotal || deal.offer?.finalTotal || 0} (discount: ₹${deal.discountTotal || deal.offer?.discountTotal || 0})`
+        ).join("\n")}`
+      : "";
 
-CURRENT CART:
-${cartSummary}
-Total: ₹${context.originalTotal || 0}
-Discount: ₹${context.currentDiscount || 0} (${currentDiscountPct}%)
-Final: ₹${context.finalPrice || 0}
+    // Build product specialty information
+    const productInfo = context.productDetails && context.productDetails.length > 0
+      ? context.productDetails.map((p, idx) => 
+          `Product ${idx + 1}: ${p.name}
+  - Brand: ${p.brand}
+  - Category: ${p.category}
+  - Price: ₹${p.price}
+  - Description: ${p.description}
+  - Features: ${p.tags.join(", ") || "Premium quality"}
+  - Quantity: ${p.quantity}`
+        ).join("\n\n")
+      : "No product details available";
+
+    // Normal conversation flow - trust Gemini's intelligence!
+    systemPrompt = `You're a skilled Flipkart Live bargaining agent in India. You're a professional negotiator who values quality and explains product worth. HAGGLE REALISTICALLY - don't give maximum discount immediately!
+
+PRODUCT DETAILS (EXPLAIN THESE TO JUSTIFY PRICING):
+${productInfo}
+
+CURRENT SITUATION:
+Cart: ${cartSummary || "empty"}
+Original total: ₹${context.originalTotal || 0}
+Current discount: ₹${context.currentDiscount || 0} (${currentDiscountPct}%)
+Final price: ₹${context.finalPrice || 0}
 ${quantityChange ? `\n${quantityChange}` : ''}
+${previousDealsText}
 
 USER PROFILE:
-- Tier: ${tier.toUpperCase()} (${tierCap}% base discount)
-- Bundle bonus: ${bundleBonus > 0 ? `+${bundleBonus}% active (2+ items)` : `+2% if 2+ items`}
-- Maximum discount: ${maxDiscountPct}% = ₹${maxDiscountRs}
-- Offer status: ${isAccepted ? "✅ ACCEPTED" : "❌ REJECTED"}
+- Loyalty tier: ${tier.toUpperCase()} (${tierCap}% base discount)
+- Bundle bonus: ${bundleBonus > 0 ? `+${bundleBonus}% active` : `+2% available if buying 2+ items`}
+- Maximum discount allowed: ${maxDiscountPct}% = ₹${maxDiscountRs}
+- Current offer: ${isAccepted ? "✅ ACCEPTED" : "❌ Negotiating"}
 ${context.reason ? `- Note: ${context.reason}` : ''}
-${context.aiBundle ? `- AI Bundle: ${context.aiBundle} - ${context.bundleReason}` : ''}
+${context.aiBundle ? `- Suggested bundle: ${context.aiBundle} - ${context.bundleReason}` : ''}
 
-UNDERSTAND NATURALLY:
-- "show me kurta" → Product browsing, show product
-- "i will take 4 of those" → Quantity update! Acknowledge 4 items now in cart
-- "add matching dupatta" → Bundle request, suggest matching
-- "give me 250 off" → Discount negotiation, check if within ₹${maxDiscountRs} limit
-- "take 3" / "3 of those" → Quantity update to 3
+CALCULATION FORMULAS (VERIFY YOUR RESPONSES):
+1. Maximum Discount = Original Total × (Tier % + Bundle % - Penalties)
+   Example: ₹1000 × (5% + 2% - 0%) = ₹70 max discount
+2. Final Price = Original Total - Discount Amount
+   Example: ₹1000 - ₹70 = ₹930 final price
+3. Discount % = (Discount Amount / Original Total) × 100
+   Example: (₹70 / ₹1000) × 100 = 7%
 
-RESPOND SMARTLY:
-- If quantity changed, acknowledge it: "Perfect! You now have ${context.currentQuantity || 1} × ${context.selectedProduct || 'items'} in your cart!"
-- If discount requested, negotiate within limits (max ₹${maxDiscountRs})
-- If bundle requested, suggest matching items
-- If offer rejected, explain limits and suggest alternatives (add items, upgrade tier)
-- If offer accepted, be enthusiastic about savings
-- Always complete your sentences fully - never cut off mid-thought!
+HAGGLING STRATEGY (CRITICAL - FOLLOW THIS!):
+- NEVER give maximum discount immediately - that's bad business!
+- The system gives you a starting discount (random, usually 20-40% of max)
+- Your job: Explain product quality and justify the price
+- If user negotiates well, the discount will increase automatically
+- Explain WHY the product is priced that way:
+  * Brand reputation and quality
+  * Material and craftsmanship  
+  * Features and benefits
+  * Market value and demand
+- Be persuasive but realistic - you're protecting product value
+- Use Indian shopping psychology: "Sir/Madam, yeh premium quality hai..."
+- If user negotiates well, acknowledge it and the discount will increase
 
-CONSTRAINTS:
-- NEVER offer discount > ₹${maxDiscountRs} (${maxDiscountPct}%)
-- Be friendly, persuasive, culturally aware (Indian shopping)
-- 2-3 sentences, natural and conversational
+YOUR ROLE:
+1. EXPLAIN PRODUCT SPECIALTY FIRST:
+   - Highlight brand reputation
+   - Mention quality materials/features
+   - Explain why it's worth the price
+   - Use product description and tags
+   - Justify the current discount amount
 
-User: "${userMessage}"
+2. RESPOND TO NEGOTIATION:
+   - Current discount is already calculated (₹${context.currentDiscount || 0})
+   - If user asks for more, acknowledge their negotiation
+   - Explain why current discount is fair
+   - If they persist, hint that you might be able to do better
+   - The system will automatically increase discount if they negotiate well
+   - Never promise more than ₹${maxDiscountRs} limit
 
-Respond naturally:`;
+3. BE PERSUASIVE:
+   - "Yeh ${context.productDetails?.[0]?.brand || 'premium'} brand hai, quality bahut acchi hai"
+   - "Material top-notch hai, isliye price thoda zyada hai"
+   - "Aap bulk mein le rahe ho, main thoda aur discount de sakta hoon"
+   - "Aapki baat sun raha hoon, dekhte hain kya kar sakte hain"
+   - Use Indian shopping culture (friendly but firm)
+
+4. NEGOTIATION DYNAMICS:
+   - Current discount: ₹${context.currentDiscount || 0} (already calculated)
+   - If user negotiates: Acknowledge and respond naturally
+   - System will increase discount based on negotiation quality
+   - Don't promise specific amounts - let the system calculate
+   - Focus on explaining product value and justifying price
+
+CONSTRAINT:
+Maximum discount you can offer: ₹${maxDiscountRs} (${maxDiscountPct}%). Never exceed this. Start lower and negotiate!
+
+User said: "${userMessage}"
+
+Respond as a skilled negotiator - explain product worth, haggle realistically, be persuasive!`;
   }
 
   try {
+    // Build conversation history for multi-turn context
+    const contents = [];
+    
+    // Add system prompt as first message
+    contents.push({
+      role: "user",
+      parts: [{ text: systemPrompt }]
+    });
+    
+    // Add previous conversation history (last 10 messages for context)
+    const recentHistory = chatHistory.slice(-10);
+    for (const msg of recentHistory) {
+      contents.push({
+        role: msg.role === "assistant" ? "model" : "user",
+        parts: [{ text: msg.content }]
+      });
+    }
+    
+    // Add current user message
+    contents.push({
+      role: "user",
+      parts: [{ text: userMessage }]
+    });
+
     const response = await fetch(GEMINI_API_URL, {
       method: "POST",
       headers: {
@@ -138,18 +223,9 @@ Respond naturally:`;
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        contents: [
-          {
-            role: "user",
-            parts: [
-              {
-                text: systemPrompt + "\n\nUser: " + userMessage
-              }
-            ]
-          }
-        ],
+        contents: contents,
         generationConfig: {
-          maxOutputTokens: 300,
+          maxOutputTokens: 800, // Increased for longer, complete responses
           temperature: 0.8,
           topP: 0.8,
           topK: 40
@@ -205,35 +281,32 @@ export async function extractIntent(message) {
     return null; // Will use mock NLU
   }
   
-  const prompt = `Extract user intent from message. Understand context naturally.
+  const prompt = `You are an intelligent intent parser for an e-commerce bargaining bot. Understand the user's message naturally and extract their intent.
 
-EXAMPLES:
-{"baseQuery": "kurta", "quantity": 1, "wantMatch": false, "requestedDiscountAmount": null}
-{"baseQuery": "jeans", "quantity": 1, "wantMatch": false, "requestedDiscountAmount": null}  // "pants" → "jeans"
-{"baseQuery": "kurta", "quantity": 2, "wantMatch": false, "requestedDiscountAmount": null}
-{"baseQuery": null, "quantity": 4, "wantMatch": false, "requestedDiscountAmount": null}  // "i will take 4 of those"
-{"baseQuery": null, "quantity": 1, "wantMatch": true, "requestedDiscountAmount": null}  // "add matching dupatta"
-{"baseQuery": null, "quantity": 1, "wantMatch": false, "requestedDiscountAmount": 250}  // "give me 250 off"
+Return a JSON object with these fields:
+- baseQuery: Product name they're looking for (e.g., "kurta", "jeans", "shirt") or null if referring to previous product
+- quantity: Number of items (default 1)
+- wantMatch: true if they want matching/bundle items, false otherwise
+- requestedDiscountAmount: Discount amount in rupees they're asking for, or null
 
 UNDERSTAND NATURALLY:
-- "4 of those" / "take 4" / "i want 4" → quantity: 4, baseQuery: null (use previous product)
-- "show kurta" → baseQuery: "kurta", quantity: 1
-- "i want pants" → baseQuery: "jeans" (pants = jeans)
+- "show me kurta" → baseQuery: "kurta"
+- "i want pants" → baseQuery: "jeans" (understand synonyms naturally)
+- "take 4 of those" → quantity: 4, baseQuery: null
 - "add matching dupatta" → wantMatch: true
-- "give me 250 off" → requestedDiscountAmount: 250
+- "give me 200 off" → requestedDiscountAmount: 200
+- "i want 200 discount" → requestedDiscountAmount: 200
+- "₹100 less" → requestedDiscountAmount: 100
 
-PRODUCT SYNONYMS:
-- pants/trousers → jeans
-- churidar/salwar → kurta
-- dress/gown → saree
-- footwear/sneakers → shoes
-- top/tshirt → shirt
+Be smart about:
+- Product synonyms (pants=jeans, trousers=jeans, churidar=kurta, etc.)
+- Quantity expressions ("4 of those", "take 3", "i want two")
+- Discount requests in any format
+- Context (if they say "those" or "that", baseQuery is null)
 
-AVAILABLE PRODUCTS: kurta, saree, shirt, jeans, shoes, dupatta, blouse
+User message: "${message}"
 
-User: "${message}"
-
-Return JSON only:`;
+Return ONLY valid JSON, no other text:`;
 
   try {
     const response = await fetch(GEMINI_API_URL, {
@@ -250,10 +323,10 @@ Return JSON only:`;
           }
         ],
         generationConfig: {
-          maxOutputTokens: 150,
-          temperature: 0.2,
-          topP: 0.4,
-          topK: 16
+          maxOutputTokens: 200,
+          temperature: 0.7, // Higher creativity for better understanding
+          topP: 0.9,
+          topK: 40
         },
         safetySettings: [
           {
@@ -283,11 +356,17 @@ Return JSON only:`;
     const data = await response.json();
     const textContent = data.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
 
+    // Try to extract JSON - be flexible with whitespace
     const jsonMatch = textContent.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
-      const parsed = JSON.parse(jsonMatch[0]);
-      console.log(`✅ [Gemini] AI extracted intent: ${JSON.stringify(parsed)}`);
-      return parsed;
+      try {
+        const parsed = JSON.parse(jsonMatch[0]);
+        console.log(`✅ [Gemini] AI extracted intent: ${JSON.stringify(parsed)}`);
+        return parsed;
+      } catch (parseError) {
+        console.error("❌ [Gemini] JSON parse error:", parseError.message);
+        console.log("Raw response:", textContent);
+      }
     }
 
     console.log("⚠️  [Gemini] No valid JSON in response, will use fallback");
